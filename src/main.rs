@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    fs::{self, File},
+    io::BufReader,
     path::{Path, PathBuf},
     process,
 };
@@ -17,15 +19,38 @@ enum Command {
     #[bpaf(command)]
     /// Check current status of disable-while-typing
     Status,
+
     #[bpaf(command)]
     /// Toggle disable-while-typing state
-    Toggle,
+    Toggle {
+        /// Save the current state before disabling
+        #[bpaf(switch)]
+        save: bool,
+    },
+
     #[bpaf(command)]
     /// Enable disable-while-typing
-    Enable,
+    Enable {
+        /// Save the current state before disabling
+        #[bpaf(switch)]
+        save: bool,
+    },
+
     #[bpaf(command)]
     /// Disable disable-while-typing
-    Disable,
+    Disable {
+        /// Save the current state before disabling
+        #[bpaf(switch)]
+        save: bool,
+    },
+
+    #[bpaf(command)]
+    /// Restore the previously saved disable-while-typing state
+    Restore {
+        /// Delete the save state after restoring
+        #[bpaf(switch)]
+        delete: bool,
+    },
 }
 
 const DEFAULT: bool = true;
@@ -43,17 +68,27 @@ fn run(command: Command) -> Result<(), String> {
     let home = env::var("HOME")
         .map_err(|_| "Environment variable $HOME is not set. Cannot locate config directory.")?;
 
-    let path = PathBuf::from(home).join(".config/cosmic/com.system76.CosmicComp/v1/input_touchpad");
+    let home = PathBuf::from(home);
+    let config_path = home.join(".config/cosmic/com.system76.CosmicComp/v1/input_touchpad");
+    let state_dir = home.join(".local/state/cosmic/juhan280.CosmicDwt");
+    let state_file = state_dir.join("disable_while_typing");
 
-    let config_string = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read config file at {}:\n  {}", path.display(), e))?;
+    let mut config: InputConfig = read_ron_from_file(&config_path)?;
 
-    let mut config: InputConfig = ron::from_str(&config_string).map_err(|e| {
-        format!(
-            "Failed to parse COSMIC config file format (corrupt RON layout):\n  {}",
-            e
-        )
-    })?;
+    if let Command::Toggle { save: true }
+    | Command::Enable { save: true }
+    | Command::Disable { save: true } = command
+    {
+        fs::create_dir_all(&state_dir).map_err(|e| {
+            format!(
+                "Failed to create state directory at {}: {}",
+                state_dir.display(),
+                e
+            )
+        })?;
+
+        save_ron_to_file(&state_file, &config.disable_while_typing)?;
+    }
 
     match command {
         Command::Status => match config.disable_while_typing {
@@ -61,32 +96,66 @@ fn run(command: Command) -> Result<(), String> {
             Some(false) => println!("Disabled"),
             None => println!("Default (Enabled)"),
         },
-        Command::Toggle => {
-            let new_val = match config.disable_while_typing {
-                Some(val) => !val,
-                None => !DEFAULT,
-            };
+        Command::Toggle { .. } => {
+            let new_val = !config.disable_while_typing.unwrap_or(DEFAULT);
             config.disable_while_typing = Some(new_val);
-            save_config(&path, &config)?;
+            save_ron_to_file(&config_path, &config)?;
             println!("Toggled (new value: {new_val})");
         }
-        Command::Enable => {
+        Command::Enable { .. } => {
             config.disable_while_typing = Some(true);
-            save_config(&path, &config)?;
+            save_ron_to_file(&config_path, &config)?;
             println!("Enabled");
         }
-        Command::Disable => {
+        Command::Disable { .. } => {
             config.disable_while_typing = Some(false);
-            save_config(&path, &config)?;
+            save_ron_to_file(&config_path, &config)?;
             println!("Disabled");
+        }
+        Command::Restore { delete } => {
+            if !state_file.exists() {
+                println!("No saved state found. Leaving configuration untouched.");
+                return Ok(());
+            }
+
+            let saved_state: Option<bool> = read_ron_from_file(&state_file)?;
+            config.disable_while_typing = saved_state;
+            save_ron_to_file(&config_path, &config)?;
+            let new_val = match saved_state {
+                Some(true) => "Enabled",
+                Some(false) => "Disabled",
+                None => "Default",
+            };
+            println!("Restored (new value: {new_val})");
+
+            if delete {
+                fs::remove_file(&state_file).map_err(|e| {
+                    format!(
+                        "Failed to delete save state file at {}:\n  {e}",
+                        state_file.display()
+                    )
+                })?;
+            }
         }
     }
 
     Ok(())
 }
 
-fn save_config(path: &Path, config: &InputConfig) -> Result<(), String> {
-    let str = ron::ser::to_string_pretty(&config, PrettyConfig::new())
+fn read_ron_from_file<T: serde::de::DeserializeOwned>(config_path: &Path) -> Result<T, String> {
+    let file = File::open(config_path).map_err(|e| {
+        format!(
+            "Failed to read RON file at {}:\n  {e}",
+            config_path.display(),
+        )
+    })?;
+
+    ron::de::from_reader(BufReader::new(file))
+        .map_err(|e| format!("Failed to parse RON file format (corrupt RON layout):\n  {e}"))
+}
+
+fn save_ron_to_file<T: ?Sized + serde::Serialize>(path: &Path, data: &T) -> Result<(), String> {
+    let str = ron::ser::to_string_pretty(&data, PrettyConfig::new())
         .map_err(|e| format!("Failed to format configuration back to RON: {}", e))?;
 
     fs::write(path, str).map_err(|e| {
