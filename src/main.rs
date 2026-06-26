@@ -56,7 +56,7 @@ enum Command {
 const DEFAULT: bool = true;
 
 fn main() {
-    let command = command().run();
+    let command = command().fallback_to_usage().run();
 
     if let Err(msg) = run(command) {
         eprintln!("Error: {msg}");
