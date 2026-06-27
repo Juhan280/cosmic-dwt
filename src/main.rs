@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 Juhan280
+// SPDX-License-Identifier: MIT
+
 use std::{
     env,
     fs::{self, File},
