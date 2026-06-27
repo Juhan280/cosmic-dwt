@@ -2,6 +2,7 @@ use std::{
     env,
     fs::{self, File},
     io::BufReader,
+    iter,
     path::{Path, PathBuf},
     process,
 };
@@ -13,7 +14,7 @@ mod config;
 use config::InputConfig;
 
 #[derive(Bpaf, Clone, Debug, PartialEq, Eq)]
-#[bpaf(options, version)]
+#[bpaf(options, version, fallback_to_usage, generate(parse_command))]
 /// Control COSMIC's disable-while-typing touchpad flag.
 enum Command {
     #[bpaf(command)]
@@ -24,7 +25,6 @@ enum Command {
     /// Toggle disable-while-typing state
     Toggle {
         /// Save the current state before disabling
-        #[bpaf(switch)]
         save: bool,
     },
 
@@ -32,7 +32,6 @@ enum Command {
     /// Enable disable-while-typing
     Enable {
         /// Save the current state before disabling
-        #[bpaf(switch)]
         save: bool,
     },
 
@@ -40,7 +39,6 @@ enum Command {
     /// Disable disable-while-typing
     Disable {
         /// Save the current state before disabling
-        #[bpaf(switch)]
         save: bool,
     },
 
@@ -48,15 +46,21 @@ enum Command {
     /// Restore the previously saved disable-while-typing state
     Restore {
         /// Delete the save state after restoring
-        #[bpaf(switch)]
         delete: bool,
+    },
+
+    #[bpaf(command)]
+    /// Print help information
+    Help {
+        #[bpaf(positional("COMMAND"))]
+        command: Option<String>,
     },
 }
 
 const DEFAULT: bool = true;
 
 fn main() {
-    let command = command().fallback_to_usage().run();
+    let command = parse_command().run();
 
     if let Err(msg) = run(command) {
         eprintln!("Error: {msg}");
@@ -137,6 +141,17 @@ fn run(command: Command) -> Result<(), String> {
                 })?;
             }
         }
+        Command::Help { command } => {
+            let args: Vec<_> = command
+                .as_deref()
+                .into_iter()
+                .chain(iter::once("--help"))
+                .collect();
+            parse_command()
+                .run_inner(&*args)
+                .unwrap_err()
+                .print_message(80);
+        }
     }
 
     Ok(())
@@ -160,9 +175,8 @@ fn save_ron_to_file<T: ?Sized + serde::Serialize>(path: &Path, data: &T) -> Resu
 
     fs::write(path, str).map_err(|e| {
         format!(
-            "Failed to save modifications to file disk at {}: {}",
+            "Failed to save modifications to file disk at {}: {e}",
             path.display(),
-            e
         )
     })?;
 
