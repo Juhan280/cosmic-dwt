@@ -7,14 +7,16 @@ use std::{
     process,
 };
 
-use bpaf::Bpaf;
+use bpaf::{Bpaf, OptionParser};
 use ron::ser::PrettyConfig;
 
 mod config;
 use config::InputConfig;
 
+const DEFAULT: bool = true;
+
 #[derive(Bpaf, Clone, Debug, PartialEq, Eq)]
-#[bpaf(options, version, fallback_to_usage, generate(parse_command))]
+#[bpaf(options, version, fallback_to_usage, generate(_parse_command))]
 /// Control COSMIC's disable-while-typing touchpad flag.
 enum Command {
     #[bpaf(command)]
@@ -57,7 +59,16 @@ enum Command {
     },
 }
 
-const DEFAULT: bool = true;
+fn parse_command() -> OptionParser<Command> {
+    let help_parser = bpaf::long("help").short('h').help("Print help information");
+    let version_parser = bpaf::long("version")
+        .short('V')
+        .help("Print version information");
+
+    _parse_command()
+        .help_parser(help_parser)
+        .version_parser(version_parser)
+}
 
 fn main() {
     let command = parse_command().run();
