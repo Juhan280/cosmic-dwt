@@ -76,20 +76,39 @@ fn parse_command() -> OptionParser<Command> {
 fn main() {
     let command = parse_command().run();
 
-    if let Err(msg) = run(command) {
+    let config_base = env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .unwrap_or_else(|| {
+            eprintln!("Error: Neither $XDG_CONFIG_HOME nor $HOME is set.");
+            process::exit(1);
+        });
+
+    let state_base = env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
+        .unwrap_or_else(|| {
+            eprintln!("Error: Neither $XDG_STATE_HOME nor $HOME is set.");
+            process::exit(1);
+        });
+
+    let config_path = config_base.join("cosmic/com.system76.CosmicComp/v1/input_touchpad");
+    let state_dir = state_base.join("cosmic/juhan280.CosmicDwt");
+    let state_file = "disable_while_typing";
+
+    if let Err(msg) = run(command, &config_path, &state_dir, state_file) {
         eprintln!("Error: {msg}");
         process::exit(1);
     }
 }
 
-fn run(command: Command) -> Result<(), String> {
-    let home = env::var("HOME")
-        .map_err(|_| "Environment variable $HOME is not set. Cannot locate config directory.")?;
-
-    let home = PathBuf::from(home);
-    let config_path = home.join(".config/cosmic/com.system76.CosmicComp/v1/input_touchpad");
-    let state_dir = home.join(".local/state/cosmic/juhan280.CosmicDwt");
-    let state_file = state_dir.join("disable_while_typing");
+fn run(
+    command: Command,
+    config_path: &Path,
+    state_dir: &Path,
+    state_file: &str,
+) -> Result<(), String> {
+    let state_file = state_dir.join(state_file);
 
     let mut config: InputConfig = read_ron_from_file(&config_path)?;
 
@@ -187,12 +206,21 @@ fn save_ron_to_file<T: ?Sized + serde::Serialize>(path: &Path, data: &T) -> Resu
     let str = ron::ser::to_string_pretty(&data, PrettyConfig::new())
         .map_err(|e| format!("Failed to format configuration back to RON: {}", e))?;
 
-    fs::write(path, str).map_err(|e| {
+    let temp_path = path.with_extension("tmp.ron");
+    dbg!(&temp_path);
+
+    fs::write(&temp_path, str).map_err(|e| {
         format!(
-            "Failed to save modifications to file disk at {}: {e}",
-            path.display(),
+            "Failed to write temporary configuration file at {}: {e}",
+            temp_path.display(),
         )
     })?;
 
+    fs::rename(&temp_path, path).map_err(|e| {
+        format!(
+            "Failed to atomically save modifications to disk at {}: {e}",
+            path.display(),
+        )
+    })?;
     Ok(())
 }
