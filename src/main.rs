@@ -10,7 +10,7 @@ use std::{
     process,
 };
 
-use bpaf::{Bpaf, OptionParser};
+use bpaf::{Bpaf, OptionParser, Parser, batteries::verbose_and_quiet_by_number};
 use ron::ser::PrettyConfig;
 
 mod config;
@@ -18,9 +18,8 @@ use config::InputConfig;
 
 const DEFAULT: bool = true;
 
-#[derive(Bpaf, Clone, Debug, PartialEq, Eq)]
-#[bpaf(options, version, fallback_to_usage, generate(_parse_command))]
-/// Control COSMIC's disable-while-typing touchpad flag.
+#[derive(Bpaf, Clone, Debug)]
+#[bpaf(generate(parse_command))]
 enum Command {
     #[bpaf(command)]
     /// Check current status of disable-while-typing
@@ -62,25 +61,47 @@ enum Command {
     },
 }
 
-fn parse_command() -> OptionParser<Command> {
+fn verbosity() -> impl Parser<usize> {
+    verbose_and_quiet_by_number(1, 0, 4).map(|v| v as usize)
+}
+
+#[derive(Bpaf, Debug)]
+#[bpaf(options, version, fallback_to_usage, generate(_parse_cli))]
+/// Control COSMIC's disable-while-typing touchpad flag.
+struct CliOptions {
+    #[bpaf(external)]
+    verbosity: usize,
+
+    #[bpaf(external(parse_command))]
+    command: Command,
+}
+
+fn parse_cli() -> OptionParser<CliOptions> {
     let help_parser = bpaf::long("help").short('h').help("Print help information");
     let version_parser = bpaf::long("version")
         .short('V')
         .help("Print version information");
 
-    _parse_command()
+    _parse_cli()
         .help_parser(help_parser)
         .version_parser(version_parser)
 }
 
 fn main() {
-    let command = parse_command().run();
+    let cli = parse_cli().run();
+    dbg!(cli.verbosity);
+
+    stderrlog::new()
+        .module(module_path!())
+        .verbosity(cli.verbosity)
+        .init()
+        .expect("Failed to setup logger");
 
     let config_base = env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_else(|| {
-            eprintln!("Error: Neither $XDG_CONFIG_HOME nor $HOME is set.");
+            log::error!("Error: Neither $XDG_CONFIG_HOME nor $HOME is set.");
             process::exit(1);
         });
 
@@ -88,7 +109,7 @@ fn main() {
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
         .unwrap_or_else(|| {
-            eprintln!("Error: Neither $XDG_STATE_HOME nor $HOME is set.");
+            log::error!("Error: Neither $XDG_STATE_HOME nor $HOME is set.");
             process::exit(1);
         });
 
@@ -96,28 +117,23 @@ fn main() {
     let state_dir = state_base.join("cosmic/juhan280.CosmicDwt");
     let state_file = "disable_while_typing";
 
-    if let Err(msg) = run(command, &config_path, &state_dir, state_file) {
-        eprintln!("Error: {msg}");
+    if run(cli.command, &config_path, &state_dir, state_file).is_err() {
         process::exit(1);
     }
 }
 
-fn run(
-    command: Command,
-    config_path: &Path,
-    state_dir: &Path,
-    state_file: &str,
-) -> Result<(), String> {
+fn run(command: Command, config_path: &Path, state_dir: &Path, state_file: &str) -> Result<(), ()> {
     let state_file = state_dir.join(state_file);
 
     let mut config: InputConfig = read_ron_from_file(&config_path)?;
 
+    // save original config when --save is specified
     if let Command::Toggle { save: true }
     | Command::Enable { save: true }
     | Command::Disable { save: true } = command
     {
         fs::create_dir_all(&state_dir).map_err(|e| {
-            format!(
+            log::error!(
                 "Failed to create state directory at {}: {}",
                 state_dir.display(),
                 e
@@ -131,7 +147,7 @@ fn run(
         Command::Status => match config.disable_while_typing {
             Some(true) => println!("Enabled"),
             Some(false) => println!("Disabled"),
-            None => println!("Default (Enabled)"),
+            None => println!("Enabled (Default)"),
         },
         Command::Toggle { .. } => {
             let new_val = !config.disable_while_typing.unwrap_or(DEFAULT);
@@ -167,7 +183,7 @@ fn run(
 
             if delete {
                 fs::remove_file(&state_file).map_err(|e| {
-                    format!(
+                    log::error!(
                         "Failed to delete save state file at {}:\n  {e}",
                         state_file.display()
                     )
@@ -180,47 +196,49 @@ fn run(
                 .into_iter()
                 .chain(iter::once("--help"))
                 .collect();
-            parse_command()
-                .run_inner(&*args)
-                .unwrap_err()
-                .print_message(80);
+            parse_cli().run_inner(&*args).unwrap_err().print_message(80);
         }
     }
 
     Ok(())
 }
 
-fn read_ron_from_file<T: serde::de::DeserializeOwned>(config_path: &Path) -> Result<T, String> {
+fn read_ron_from_file<T: serde::de::DeserializeOwned>(config_path: &Path) -> Result<T, ()> {
+    log::info!("Reading RON file from: {}", config_path.display());
     let file = File::open(config_path).map_err(|e| {
-        format!(
-            "Failed to read RON file at {}:\n  {e}",
+        log::error!(
+            "Failed to read RON file from {}:\n  {e}",
             config_path.display(),
         )
     })?;
-
     ron::de::from_reader(BufReader::new(file))
-        .map_err(|e| format!("Failed to parse RON file format (corrupt RON layout):\n  {e}"))
+        .map_err(|e| log::error!("Failed to parse RON file format (corrupt RON layout):\n  {e}"))
 }
 
-fn save_ron_to_file<T: ?Sized + serde::Serialize>(path: &Path, data: &T) -> Result<(), String> {
+fn save_ron_to_file<T: ?Sized + serde::Serialize>(path: &Path, data: &T) -> Result<(), ()> {
     let str = ron::ser::to_string_pretty(&data, PrettyConfig::new())
-        .map_err(|e| format!("Failed to format configuration back to RON: {}", e))?;
+        .map_err(|e| log::error!("Failed to format configuration back to RON: {}", e))?;
 
-    let temp_path = path.with_extension("tmp.ron");
-    dbg!(&temp_path);
+    let temp_path = path.with_extension("tmp");
 
+    log::trace!("Writing data to temp_file at: {}", temp_path.display());
     fs::write(&temp_path, str).map_err(|e| {
-        format!(
+        log::error!(
             "Failed to write temporary configuration file at {}: {e}",
             temp_path.display(),
         )
     })?;
 
+    log::trace!(
+        "Attempting to atomically save modifications to {}",
+        path.display()
+    );
     fs::rename(&temp_path, path).map_err(|e| {
-        format!(
+        log::error!(
             "Failed to atomically save modifications to disk at {}: {e}",
             path.display(),
         )
     })?;
+
     Ok(())
 }

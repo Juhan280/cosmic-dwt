@@ -17,9 +17,11 @@ This tool provides a programmatic way to disable the `disable_while_typing` flag
 ## Usage
 
 ```text
-Usage: cosmic-dwt COMMAND ...
+Usage: cosmic-dwt [-v]... [-q]... COMMAND ...
 
 Available options:
+    -v, --verbose  Increase output verbosity, can be used several times
+    -q, --quiet    Decrease output verbosity, can be used several times
     -h, --help     Print help information
     -V, --version  Print version information
 

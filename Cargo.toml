@@ -1,10 +1,12 @@
 [package]
 name = "cosmic-dwt"
-version = "0.2.3"
+version = "0.3.0-dev"
 edition = "2024"
 license = "MIT AND GPL-3.0-only"
 
 [dependencies]
-bpaf = { version = "0.9.26", features = ["bpaf_derive", "bright-color"] }
+bpaf = { version = "0.9.26", features = ["batteries", "bpaf_derive", "bright-color"] }
+log = "0.4.33"
 ron = "0.12.2"
 serde = { version = "1.0.228", features = ["derive"] }
+stderrlog = "0.6.0"
