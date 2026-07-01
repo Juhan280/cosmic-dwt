@@ -19,7 +19,6 @@ const DEFAULT: bool = true;
 
 fn main() {
     let cli = parse_cli().run();
-    dbg!(cli.verbosity);
 
     stderrlog::new()
         .module(module_path!())
