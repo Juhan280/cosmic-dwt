@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate tag matches Cargo.toml
+        run: |
+          VERSION=$(cargo pkgid | cut -d# -f2 | cut -d: -f2)
+          TAG=${GITHUB_REF_NAME}
+
+          echo "Cargo version: $VERSION"
+          echo "Git tag: $TAG"
+
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "ERROR: tag does not match Cargo.toml version"
+            exit 1
+          fi
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Rename binary
+        run: cp target/release/cosmic-dwt cosmic-dwt-linux-x86_64
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            cosmic-dwt-linux-x86_64
+            README.md
+            LICENSE
+            LICENSE-MIT
