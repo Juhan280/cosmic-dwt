@@ -66,9 +66,12 @@ end=cosmic-dwt restore --delete
 
 ## License
 
-This repository contains components under different licenses:
+This project contains code under multiple licenses.
 
-* **`src/main.rs`** and the command-line interface logic are licensed under the [MIT License](LICENSE-MIT).
-* **`src/config.rs`** contains configuration structures modified from `cosmic-comp` and is licensed under the [GPL-3.0-only License](LICENSE).
+All files include SPDX-License-Identifier headers indicating their license.
 
-Because these components are compiled together into a single static executable, the resulting distributed binary is governed by the terms of the **GPL-3.0-only**.
+Unless otherwise specified:
+- Original code is licensed under MIT
+- Code derived from cosmic-comp is licensed under GPL-3.0-only
+
+The final binary is distributed under GPL-3.0-only due to inclusion of GPL components.
