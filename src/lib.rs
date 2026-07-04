@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Juhan280
 // SPDX-License-Identifier: MIT
 
-use bpaf::{Bpaf, OptionParser, Parser, batteries::verbose_and_quiet_by_number};
+use bpaf::{Bpaf, OptionParser, Parser};
 
 #[derive(Bpaf, Clone, Debug)]
 #[bpaf(generate(parse_command))]
@@ -46,12 +46,30 @@ pub enum Command {
     },
 }
 
+// Copied and modified from bpaf::batteries::verbose_and_quiet_by_number
 fn verbosity() -> impl Parser<usize> {
-    verbose_and_quiet_by_number(1, 0, 4).map(|v| v as usize)
+    let offset = 1; // default is 1 for warnings
+    let (min, max) = (0, 4);
+
+    let verbose = bpaf::short('v')
+        .long("verbose")
+        .help("Increase output verbosity, can be used several times")
+        .req_flag(())
+        .many()
+        .map(|v| v.len());
+
+    let quiet = bpaf::short('q')
+        .long("quiet")
+        .help("Decrease output verbosity, can be used several times")
+        .req_flag(())
+        .many()
+        .map(|v| v.len());
+
+    bpaf::construct!(verbose, quiet).map(move |(v, q)| (offset + v - q).clamp(min, max))
 }
 
 // Hide the _parse_cli auto generated function
-mod cli {
+mod inner {
     use super::*;
 
     #[derive(Bpaf, Debug)]
@@ -66,15 +84,13 @@ mod cli {
     }
 
     pub fn parse_cli() -> OptionParser<CliOptions> {
-        let help_parser = bpaf::long("help").short('h').help("Print help information");
-        let version_parser = bpaf::long("version")
+        let help = bpaf::long("help").short('h').help("Print help information");
+        let version = bpaf::long("version")
             .short('V')
             .help("Print version information");
 
-        _parse_cli()
-            .help_parser(help_parser)
-            .version_parser(version_parser)
+        _parse_cli().help_parser(help).version_parser(version)
     }
 }
 
-pub use cli::{CliOptions, parse_cli};
+pub use inner::{CliOptions, parse_cli};
