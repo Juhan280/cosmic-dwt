@@ -61,6 +61,7 @@ fn run(command: Command, config_path: &Path, state_dir: &Path, state_file: &str)
     | Command::Enable { save: true }
     | Command::Disable { save: true } = command
     {
+        log::debug!("Creating state directory at {}", state_file.display());
         fs::create_dir_all(state_dir).map_err(|e| {
             log::error!(
                 "Failed to create state directory at {}: {}",
@@ -111,6 +112,7 @@ fn run(command: Command, config_path: &Path, state_dir: &Path, state_file: &str)
             println!("Restored (new value: {new_val})");
 
             if delete {
+                log::info!("Deleting save state file at {}", state_file.display());
                 fs::remove_file(&state_file).map_err(|e| {
                     log::error!(
                         "Failed to delete save state file at {}:\n  {e}",

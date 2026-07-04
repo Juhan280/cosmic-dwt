@@ -17,17 +17,20 @@ pub fn read_ron_from_file<T: serde::de::DeserializeOwned>(config_path: &Path) ->
             config_path.display(),
         )
     })?;
+
+    log::debug!("Deserializing RON data from {}", config_path.display());
     ron::de::from_reader(BufReader::new(file))
         .map_err(|e| log::error!("Failed to parse RON file format (corrupt RON layout):\n  {e}"))
 }
 
 pub fn save_ron_to_file<T: ?Sized + serde::Serialize>(path: &Path, data: &T) -> Result<(), ()> {
+    log::debug!("Serializing data to RON for {}", path.display());
     let str = ron::ser::to_string_pretty(&data, PrettyConfig::new())
-        .map_err(|e| log::error!("Failed to format configuration back to RON: {}", e))?;
+        .map_err(|e| log::error!("Failed to serialize configuration back to RON: {}", e))?;
 
     let temp_path = path.with_extension("tmp");
 
-    log::trace!("Writing data to temp_file at: {}", temp_path.display());
+    log::debug!("Writing data to temp_file at: {}", temp_path.display());
     fs::write(&temp_path, str).map_err(|e| {
         log::error!(
             "Failed to write temporary configuration file at {}: {e}",
