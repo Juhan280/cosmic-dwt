@@ -43,6 +43,3 @@ jobs:
         with:
           files: |
             cosmic-dwt-linux-x86_64
-            README.md
-            LICENSE
-            LICENSE-MIT
