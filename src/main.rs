@@ -7,6 +7,7 @@ use std::{
     process,
 };
 
+use anyhow::Context;
 use cosmic_dwt::{Command, parse_cli};
 
 mod config;
@@ -46,12 +47,18 @@ fn main() {
     let state_dir = state_base.join("cosmic/juhan280.CosmicDwt");
     let state_file = "disable_while_typing";
 
-    if run(cli.command, &config_path, &state_dir, state_file).is_err() {
+    if let Err(err) = run(cli.command, &config_path, &state_dir, state_file) {
+        log::error!("{err:#}");
         process::exit(1);
     }
 }
 
-fn run(command: Command, config_path: &Path, state_dir: &Path, state_file: &str) -> Result<(), ()> {
+fn run(
+    command: Command,
+    config_path: &Path,
+    state_dir: &Path,
+    state_file: &str,
+) -> anyhow::Result<()> {
     let state_file = state_dir.join(state_file);
 
     let mut config: InputConfig = read_ron_from_file(config_path)?;
@@ -62,11 +69,10 @@ fn run(command: Command, config_path: &Path, state_dir: &Path, state_file: &str)
     | Command::Disable { save: true } = command
     {
         log::debug!("Creating state directory at {}", state_file.display());
-        fs::create_dir_all(state_dir).map_err(|e| {
-            log::error!(
-                "Failed to create state directory at {}: {}",
+        fs::create_dir_all(state_dir).with_context(|| {
+            format!(
+                "Failed to create state directory at {}",
                 state_dir.display(),
-                e
             )
         })?;
 
@@ -113,9 +119,9 @@ fn run(command: Command, config_path: &Path, state_dir: &Path, state_file: &str)
 
             if delete {
                 log::info!("Deleting save state file at {}", state_file.display());
-                fs::remove_file(&state_file).map_err(|e| {
-                    log::error!(
-                        "Failed to delete save state file at {}:\n  {e}",
+                fs::remove_file(&state_file).with_context(|| {
+                    format!(
+                        "Failed to delete save state file at {}",
                         state_file.display()
                     )
                 })?;

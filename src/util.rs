@@ -7,34 +7,31 @@ use std::{
     path::Path,
 };
 
+use anyhow::Context;
 use ron::ser::PrettyConfig;
 
-pub fn read_ron_from_file<T: serde::de::DeserializeOwned>(config_path: &Path) -> Result<T, ()> {
+pub fn read_ron_from_file<T: serde::de::DeserializeOwned>(config_path: &Path) -> anyhow::Result<T> {
     log::info!("Reading RON file from: {}", config_path.display());
-    let file = File::open(config_path).map_err(|e| {
-        log::error!(
-            "Failed to read RON file from {}:\n  {e}",
-            config_path.display(),
-        )
-    })?;
+    let file = File::open(config_path)
+        .with_context(|| format!("Failed to read RON file from {}", config_path.display(),))?;
 
     log::debug!("Deserializing RON data from {}", config_path.display());
     ron::de::from_reader(BufReader::new(file))
-        .map_err(|e| log::error!("Failed to parse RON file format (corrupt RON layout):\n  {e}"))
+        .context("Failed to parse RON file format (corrupt RON layout)")
 }
 
-pub fn save_ron_to_file<T: ?Sized + serde::Serialize>(path: &Path, data: &T) -> Result<(), ()> {
+pub fn save_ron_to_file<T: ?Sized + serde::Serialize>(path: &Path, data: &T) -> anyhow::Result<()> {
     log::debug!("Serializing data to RON for {}", path.display());
     let str = ron::ser::to_string_pretty(&data, PrettyConfig::new())
-        .map_err(|e| log::error!("Failed to serialize configuration back to RON: {}", e))?;
+        .context("Failed to serialize configuration back to RON")?;
 
     let temp_path = path.with_extension("tmp");
 
     log::debug!("Writing data to temp_file at: {}", temp_path.display());
-    fs::write(&temp_path, str).map_err(|e| {
-        log::error!(
-            "Failed to write temporary configuration file at {}: {e}",
-            temp_path.display(),
+    fs::write(&temp_path, str).with_context(|| {
+        format!(
+            "Failed to write temporary configuration file at {}",
+            temp_path.display()
         )
     })?;
 
@@ -42,12 +39,10 @@ pub fn save_ron_to_file<T: ?Sized + serde::Serialize>(path: &Path, data: &T) -> 
         "Attempting to atomically save modifications to {}",
         path.display()
     );
-    fs::rename(&temp_path, path).map_err(|e| {
-        log::error!(
-            "Failed to atomically save modifications to disk at {}: {e}",
+    fs::rename(&temp_path, path).with_context(|| {
+        format!(
+            "Failed to atomically save modifications to disk at {}",
             path.display(),
         )
-    })?;
-
-    Ok(())
+    })
 }
