@@ -94,3 +94,8 @@ mod inner {
 }
 
 pub use inner::{CliOptions, parse_cli};
+
+#[test]
+fn check_bpaf_invariants() {
+    parse_cli().check_invariants(false)
+}

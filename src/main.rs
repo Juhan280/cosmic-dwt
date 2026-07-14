@@ -16,6 +16,7 @@ mod util;
 use config::InputConfig;
 use util::{read_ron_from_file, save_ron_to_file};
 
+// default when disable_while_typing is set to None
 const DEFAULT: bool = true;
 
 fn main() {
